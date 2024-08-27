@@ -1,2 +1,142 @@
 # geoMapa-interativo-
 Teste de mapa interativo para desenvolvimento de uma plataforma futura
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Highly Interactive 3D Map</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.css" rel="stylesheet" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #controls { position: absolute; top: 10px; left: 10px; z-index: 1; background-color: white; padding: 15px; border-radius: 10px; max-width: 300px; }
+        #controls label { display: block; margin-bottom: 5px; }
+        #controls input { margin-bottom: 10px; }
+        #toggle3D { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <label for="toggle3D">3D Buildings: <input type="checkbox" id="toggle3D" checked></label>
+        <label for="topographyColor">Topography Color: <input type="color" id="topographyColor" value="#aaaaaa"></label>
+        <label for="waterColor">Water Color: <input type="color" id="waterColor" value="#0000ff"></label>
+        <label for="textColor">Text Color: <input type="color" id="textColor" value="#000000"></label>
+        <label for="roadColor">Road Hierarchy Color: <input type="color" id="roadColor" value="#ffffff"></label>
+        <label for="buildingColor">Building Color: <input type="color" id="buildingColor" value="#ff69b4"></label>
+        <label for="pingColor">Ping Color: <input type="color" id="pingColor" value="#ff0000"></label>
+        <button id="addPing">Add Ping</button>
+    </div>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYXJxamhvbnlsaXJhIiwiYSI6ImNtMDVtM3plYzBkeDcybG9oMmt1cHdrNWsifQ.1zZtn2H7Z9omfLIdqXykNw';
+
+        // Inicializando o mapa
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-49.2469, -26.4245],
+            zoom: 15,
+            pitch: 60, 
+            bearing: -17.6
+        });
+
+        map.on('load', function () {
+            // Configuração inicial das camadas em 3D
+            map.addLayer({
+                'id': '3d-buildings',
+                'source': 'composite',
+                'source-layer': 'building',
+                'filter': ['==', 'extrude', 'true'],
+                'type': 'fill-extrusion',
+                'minzoom': 15,
+                'paint': {
+                    'fill-extrusion-color': '#ff69b4',
+                    'fill-extrusion-height': [
+                        'interpolate', ['linear'], ['zoom'],
+                        15, 0,
+                        15.05, ['get', 'height']
+                    ],
+                    'fill-extrusion-base': [
+                        'interpolate', ['linear'], ['zoom'],
+                        15, 0,
+                        15.05, ['get', 'min_height']
+                    ],
+                    'fill-extrusion-opacity': 0.9
+                }
+            });
+
+            // Configuração de topografia 3D
+            map.addSource('mapbox-dem', {
+                'type': 'raster-dem',
+                'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                'tileSize': 512,
+                'maxzoom': 14
+            });
+            map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+
+            // Adiciona camada de sombras no terreno para realismo
+            map.addLayer({
+                'id': 'terrain-shadow',
+                'source': 'mapbox-dem',
+                'type': 'hillshade'
+            });
+
+            // Controles para personalização
+            document.getElementById('topographyColor').addEventListener('input', function(e) {
+                const color = e.target.value;
+                map.setPaintProperty('hillshade', 'hillshade-highlight-color', color);
+            });
+
+            document.getElementById('waterColor').addEventListener('input', function(e) {
+                const color = e.target.value;
+                map.setPaintProperty('water', 'fill-color', color);
+            });
+
+            document.getElementById('textColor').addEventListener('input', function(e) {
+                const color = e.target.value;
+                map.setPaintProperty('road-label', 'text-color', color);
+                map.setPaintProperty('place-label', 'text-color', color);
+            });
+
+            document.getElementById('roadColor').addEventListener('input', function(e) {
+                const color = e.target.value;
+                map.setPaintProperty('road-primary', 'line-color', color);
+                map.setPaintProperty('road-secondary', 'line-color', color);
+                map.setPaintProperty('road-tertiary', 'line-color', color);
+            });
+
+            document.getElementById('buildingColor').addEventListener('input', function(e) {
+                const color = e.target.value;
+                map.setPaintProperty('3d-buildings', 'fill-extrusion-color', color);
+            });
+
+            // Controle para ligar/desligar visualização 3D
+            document.getElementById('toggle3D').addEventListener('change', function(e) {
+                const visibility = e.target.checked ? 'visible' : 'none';
+                map.setLayoutProperty('3d-buildings', 'visibility', visibility);
+                map.setTerrain({ 'source': e.target.checked ? 'mapbox-dem' : null });
+            });
+
+            // Adicionar pings interativos com personalização
+            let pingCounter = 0;
+            document.getElementById('addPing').addEventListener('click', function() {
+                const pingColor = document.getElementById('pingColor').value;
+                const description = prompt("Enter a description for this ping:");
+                const coordinates = map.getCenter(); // Usa o centro do mapa como localização padrão do ping
+                const marker = new mapboxgl.Marker({ color: pingColor, draggable: true })
+                    .setLngLat(coordinates)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h3>Ping #${++pingCounter}</h3><p>${description}</p>`))
+                    .addTo(map);
+
+                // Atualizar a posição do ping quando ele for movido
+                marker.on('dragend', function() {
+                    const lngLat = marker.getLngLat();
+                    marker.setPopup(new mapboxgl.Popup().setHTML(`<h3>Ping #${pingCounter}</h3><p>${description}</p><p>New Position: ${lngLat.lng}, ${lngLat.lat}</p>`));
+                });
+            });
+        });
+    </script>
+</body>
+</html>
